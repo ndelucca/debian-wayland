@@ -1,4 +1,5 @@
 #!/bin/sh
+
 set -eu
 
 echo "=== Sway Wayland Setup on Bare Debian ==="
@@ -9,7 +10,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Define the target user
+# Define the target user (default to SUDO_USER if present)
 USER_NAME="${SUDO_USER:-$(logname)}"
 USER_HOME="$(eval echo "~$USER_NAME")"
 
@@ -19,13 +20,13 @@ REQUIRED_PACKAGES="sway wayland-utils wl-clipboard grim slurp foot dbus-user-ses
 echo "[1/5] Updating package list..."
 apt-get update -qq
 
-echo "[2/5] Installing required packages (Wayland only)..."
+echo "[2/5] Installing required Wayland packages..."
 apt-get install -y $REQUIRED_PACKAGES
 
-echo "[3/5] Enabling and starting seatd socket (if not already)..."
+echo "[3/5] Enabling seatd socket..."
 systemctl enable --now seatd.service
 
-echo "[4/5] Creating basic Sway config (if missing)..."
+echo "[4/5] Creating Sway config for $USER_NAME..."
 CONFIG_DIR="$USER_HOME/.config/sway"
 DEFAULT_CONFIG="/etc/sway/config"
 
@@ -33,21 +34,20 @@ if [ ! -f "$CONFIG_DIR/config" ]; then
     mkdir -p "$CONFIG_DIR"
     cp "$DEFAULT_CONFIG" "$CONFIG_DIR/config"
     chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/.config"
-    echo " - Default sway config copied to $CONFIG_DIR"
+    echo " - Sway default config installed."
 else
-    echo " - Sway config already exists, skipping"
+    echo " - Sway config already exists, skipping."
 fi
 
-echo "[5/5] Setting up systemd user service to launch sway on local login..."
+echo "[5/5] Setting up systemd user service to start sway..."
 
 USER_SYSTEMD_DIR="$USER_HOME/.config/systemd/user"
 SERVICE_FILE="$USER_SYSTEMD_DIR/sway-session.service"
 
-# Create service directory if missing
 mkdir -p "$USER_SYSTEMD_DIR"
 chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/.config"
 
-# Write the systemd user service (idempotent)
+# Write systemd user service
 cat > "$SERVICE_FILE" <<'EOF'
 [Unit]
 Description=Start Sway Wayland session
@@ -69,27 +69,20 @@ EOF
 
 chown "$USER_NAME:$USER_NAME" "$SERVICE_FILE"
 
-# Enable lingering for the user (so user systemd works after login)
-echo "[INFO] Enabling user lingering for $USER_NAME"
+# Enable user lingering so user services start after login
+echo " - Enabling user lingering for $USER_NAME"
 loginctl enable-linger "$USER_NAME"
 
-USER_BASH_PROFILE="$USER_HOME/.bash_profile"
+# Add systemctl --user enable to .profile if not already present
+USER_PROFILE="$USER_HOME/.profile"
 ENABLER_LINE='systemctl --user enable sway-session.service 2>/dev/null || true'
 
-if ! grep -qF "$ENABLER_LINE" "$USER_BASH_PROFILE" 2>/dev/null; then
-  echo "$ENABLER_LINE" >> "$USER_BASH_PROFILE"
-  chown "$USER_NAME:$USER_NAME" "$USER_BASH_PROFILE"
-  echo " - Added sway-session enable line to $USER_BASH_PROFILE"
+if ! grep -qF "$ENABLER_LINE" "$USER_PROFILE" 2>/dev/null; then
+    echo "$ENABLER_LINE" >> "$USER_PROFILE"
+    chown "$USER_NAME:$USER_NAME" "$USER_PROFILE"
+    echo " - Added sway-session enable command to $USER_PROFILE"
 else
-  echo " - sway-session enable line already present in $USER_BASH_PROFILE"
+    echo " - sway-session enable command already present in $USER_PROFILE"
 fi
 
-if ! systemctl --user is-enabled sway-session.service >/dev/null 2>&1; then
-    systemctl --user enable sway-session.service
-    echo " - sway-session.service enabled"
-else
-    echo " - sway-session.service already enabled"
-fi
-'
-
-echo "=== Setup Complete. Reboot and login via local TTY to launch Sway ==="
+echo "=== Setup Complete. Reboot and log in locally (TTY) to launch Sway ==="
