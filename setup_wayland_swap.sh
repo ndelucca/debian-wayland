@@ -70,13 +70,19 @@ EOF
 chown "$USER_NAME:$USER_NAME" "$SERVICE_FILE"
 
 # Enable lingering for the user (so user systemd works after login)
+echo "[INFO] Enabling user lingering for $USER_NAME"
 loginctl enable-linger "$USER_NAME"
 
-# Enable the sway-session service if not already
-su - "$USER_NAME" -c '
-mkdir -p "$HOME/.config/systemd/user"
-systemctl --user daemon-reexec
-systemctl --user daemon-reload
+USER_BASH_PROFILE="$USER_HOME/.bash_profile"
+ENABLER_LINE='systemctl --user enable sway-session.service 2>/dev/null || true'
+
+if ! grep -qF "$ENABLER_LINE" "$USER_BASH_PROFILE" 2>/dev/null; then
+  echo "$ENABLER_LINE" >> "$USER_BASH_PROFILE"
+  chown "$USER_NAME:$USER_NAME" "$USER_BASH_PROFILE"
+  echo " - Added sway-session enable line to $USER_BASH_PROFILE"
+else
+  echo " - sway-session enable line already present in $USER_BASH_PROFILE"
+fi
 
 if ! systemctl --user is-enabled sway-session.service >/dev/null 2>&1; then
     systemctl --user enable sway-session.service
